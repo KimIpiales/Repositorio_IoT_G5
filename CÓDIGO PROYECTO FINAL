@@ -1,0 +1,110 @@
+#include <WiFiManager.h>
+#include <strings_en.h>
+#include <wm_consts_en.h>
+#include <wm_strings_en.h>
+#include <wm_strings_es.h>
+#include "UbidotsEsp32Mqtt.h"
+#include <PubSubClient.h>
+#include "Arduino.h"
+#include "heltec.h"
+
+
+/****************************************
+  Configuración Ubidots
+ ****************************************/
+const char *UBIDOTS_TOKEN = "BBFF-L52U8CYjBrk7oM7FgA8GZ8Z8aklz18";  // Token de Ubidots
+const char *WIFI_SSID = "M00_7C60";      // SSID de WiFi
+const char *WIFI_PASS = "heltec.org";      // Contraseña de WiFi
+const char *DEVICE_LABEL = "ESP32-TM";   // Device_label Ubidots
+const char *VARIABLE_LABEL = "aforo"; // Variable label Ubidots
+
+Ubidots ubidots(UBIDOTS_TOKEN);
+
+int aforo = 0;
+
+/****************************************
+   Funciones
+ ****************************************/
+
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++)
+  {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+//Configuraciones HC-SR04
+const int Echo = 13;
+const int Trigger = 12;
+
+//Definimos la variable "t" como el tiempo que demora el eco en llegar de retorno al sensor/
+long t;
+//Definimos la variable "d" como la distancia que mide el sensor, en centímetros/
+long d;
+
+void setup() {
+
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  // ubidots.setDebug(true);  // uncomment this to make debug messages available
+  Serial.println("PROYECTO");
+
+
+
+
+
+  ubidots.connectToWifi(WIFI_SSID, WIFI_PASS);
+  ubidots.setCallback(callback);
+  ubidots.setup();
+  ubidots.reconnect();
+
+  //El modo de operación de Trigger se define como una SALIDA/
+  pinMode(Trigger, OUTPUT);
+  //El modo de operación de Echo se define como una ENTRADA/
+  pinMode(Echo, INPUT);
+  //El pin Trigger se inicia en un estado BAJO, con un 0 lógico, sin operar por el momento/
+  digitalWrite(Trigger, LOW);
+  //Imprimimos en el terminal Serial/
+  Serial.print("Iniciando la medición de distancia con sensor HC-04");
+  Serial.println("");
+
+}
+
+void loop() {
+
+  digitalWrite(Trigger, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(Trigger, LOW);
+  //La variable "t" toma como valor, el ancho del pulso de 10 microsegundos que se implementó/
+  t = pulseIn(Echo, HIGH); //obtenemos el ancho del pulso
+  //La variable "d" toma el valor del cociente entre el tiempo (en microsegundos) y 59 (ambos se explican en el post)
+  d = t / 59;
+  //Se imprime en el monitor Serial el valor de la Distancia, y añadimos un retardo de aproximadamente 5 segundos
+  Serial.print("Distancia medida: ");
+  Serial.println(d);
+  delay(500);
+
+  //Condición de aforo
+  if (d <= 15) { //si la distancia es menor o igual a 15
+    aforo += 1;
+    Serial.print("Aforo: ");
+    Serial.println(aforo);
+
+    if (!ubidots.connected())
+    {
+      ubidots.reconnect();
+    }
+
+    float value = aforo;
+    ubidots.add(VARIABLE_LABEL, value); // Insert your variable Labels and the value to be sent
+    ubidots.publish(DEVICE_LABEL);
+
+    ubidots.loop();
+  }
+
+}
